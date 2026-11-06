@@ -1,8 +1,11 @@
 [package]
-name = "plant-water-intake"
+name = "plant_water_intake"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
 axum = "0.8.9"
 tokio = { version = "1.54.1", features = ["full"] }
+tower-http = { version = "0.7.1", features = ["trace"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
