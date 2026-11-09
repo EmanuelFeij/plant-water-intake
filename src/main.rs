@@ -1,8 +1,11 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
-use axum::{Router, routing::get};
+use axum::{Router, extract::Path, http::StatusCode, routing::get};
 use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
 use tracing_subscriber::EnvFilter;
+
+mod db;
+mod model;
 
 // `main` can't be async on its own: Rust has no built-in async runtime.
 // This macro starts a tokio runtime and runs our async `main` on it.
@@ -25,11 +28,14 @@ async fn main() {
     // *span* per request (the context: method, uri) and an *event* when the
     // response is sent (status, latency). Both log at DEBUG by default; we
     // raise them to INFO so every request gets exactly one line in production.
-    let app = Router::new().route("/", get(root)).layer(
-        TraceLayer::new_for_http()
-            .make_span_with(DefaultMakeSpan::new().level(tracing::Level::INFO))
-            .on_response(DefaultOnResponse::new().level(tracing::Level::INFO)),
-    );
+    let app = Router::new()
+        .route("/", get(root))
+        .route("/w/{slug}", get(handle_get))
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(DefaultMakeSpan::new().level(tracing::Level::INFO))
+                .on_response(DefaultOnResponse::new().level(tracing::Level::INFO)),
+        );
 
     // --- Start the server --------------------------------------------------
     // Panicking is fine at startup: if we can't bind, the program can't do anything useful. The closure builds
@@ -50,8 +56,12 @@ async fn main() {
 }
 
 // A handler is an async fn whose return type implements `IntoResponse`.
-// `&'static str` becomes a 200 response with a text/plain body. `()` would
-// give an empty 200. The last expression (no `;`) is the return value.
 async fn root() -> &'static str {
     "Hello, World!"
+}
+
+// TODO:
+async fn handle_get(Path(slug): Path<String>) -> StatusCode {
+    tracing::debug!(%slug, "slug received");
+    StatusCode::OK
 }
