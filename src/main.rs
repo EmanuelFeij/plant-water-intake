@@ -1,8 +1,21 @@
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::{
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    sync::{Arc, Mutex},
+};
 
-use axum::{Router, extract::Path, http::StatusCode, routing::get};
+use axum::{
+    Json, Router,
+    extract::{Path, State},
+    http::StatusCode,
+    routing::{get, post},
+};
 use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
 use tracing_subscriber::EnvFilter;
+
+use crate::{
+    db::{create_table, get_plant, get_plants, insert_plant},
+    model::Plant,
+};
 
 mod db;
 mod model;
@@ -23,6 +36,15 @@ async fn main() {
     // Localhost only, because Caddy on the same machine will proxy to us.
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8080);
 
+    let connection = rusqlite::Connection::open("Plant-Watering.db")
+        .unwrap_or_else(|e| panic!("failed to open sqlite db: {e}"));
+
+    create_table(&connection).unwrap_or_else(|e| panic!("failed to create sqlite db: {e}"));
+
+    let app_state = AppState {
+        db_connection: Arc::new(Mutex::new(connection)),
+    };
+
     // --- Routes and middleware ---------------------------------------------
     // `.layer()` wraps every route in tower middleware. TraceLayer creates a
     // *span* per request (the context: method, uri) and an *event* when the
@@ -30,12 +52,15 @@ async fn main() {
     // raise them to INFO so every request gets exactly one line in production.
     let app = Router::new()
         .route("/", get(root))
-        .route("/w/{slug}", get(handle_get))
+        .route("/w/{slug}", get(handle_get_plant))
+        .route("/w", get(handle_get_plants))
+        .route("/w", post(handle_post_plant))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(DefaultMakeSpan::new().level(tracing::Level::INFO))
                 .on_response(DefaultOnResponse::new().level(tracing::Level::INFO)),
-        );
+        )
+        .with_state(app_state);
 
     // --- Start the server --------------------------------------------------
     // Panicking is fine at startup: if we can't bind, the program can't do anything useful. The closure builds
@@ -61,7 +86,50 @@ async fn root() -> &'static str {
 }
 
 // TODO:
-async fn handle_get(Path(slug): Path<String>) -> StatusCode {
-    tracing::debug!(%slug, "slug received");
-    StatusCode::OK
+async fn handle_get_plant(Path(slug): Path<String>, State(state): State<AppState>) -> StatusCode {
+    let res = state.db_connection.lock().unwrap(); // TODO: improve this
+
+    match get_plant(&res, &slug) {
+        Ok(None) => StatusCode::NOT_FOUND,
+        Ok(_) => StatusCode::OK,
+        Err(_) => {
+            tracing::error!("some error");
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+    }
+}
+
+async fn handle_get_plants(State(state): State<AppState>) -> StatusCode {
+    let res = state.db_connection.lock().unwrap(); // TODO: improve this
+
+    // TODO: we need to return json of the plants
+    match get_plants(&res) {
+        Ok(plants) => {
+            for ele in plants {
+                println!("{:?}", ele)
+            }
+            StatusCode::OK
+        }
+        Err(_) => {
+            tracing::error!("some error");
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+    }
+}
+
+async fn handle_post_plant(State(state): State<AppState>, Json(plant): Json<Plant>) -> StatusCode {
+    let res = state.db_connection.lock().unwrap(); // TODO: improve this
+
+    match insert_plant(&res, &plant) {
+        Ok(_) => StatusCode::CREATED,
+        Err(_) => {
+            tracing::error!("some error");
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct AppState {
+    db_connection: Arc<Mutex<rusqlite::Connection>>,
 }
