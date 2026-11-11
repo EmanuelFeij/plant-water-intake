@@ -14,3 +14,9 @@ pub enum MarkedWateredOutcome {
     NotFound,
     WateredRecently, // at max 10 minutes prior
 }
+
+#[derive(Debug, PartialEq)]
+pub enum InsertOutcome {
+    Created,
+    PlantAlreadyExists,
+}

@@ -1,6 +1,5 @@
+use crate::model::{InsertOutcome, MarkedWateredOutcome, Plant};
 use rusqlite::{OptionalExtension, Result, Row, params};
-
-use crate::model::{MarkedWateredOutcome, Plant};
 
 const CREATE_TABLE_QUERY: &str = "
 CREATE TABLE IF NOT EXISTS plants (
@@ -53,8 +52,8 @@ pub fn get_plants(connection: &rusqlite::Connection) -> Result<Vec<Plant>> {
     Ok(plants)
 }
 
-pub fn insert_plant(connection: &rusqlite::Connection, plant: &Plant) -> Result<()> {
-    connection.execute(
+pub fn insert_plant(connection: &rusqlite::Connection, plant: &Plant) -> Result<InsertOutcome> {
+    match connection.execute(
         INSERT_PLANT_QUERY,
         params![
             plant.slug,
@@ -62,9 +61,13 @@ pub fn insert_plant(connection: &rusqlite::Connection, plant: &Plant) -> Result<
             plant.interval_days,
             plant.last_watered_at
         ],
-    )?;
-
-    Ok(())
+    ) {
+        Ok(_) => Ok(InsertOutcome::Created),
+        Err(e) => match e.sqlite_error_code() {
+            Some(rusqlite::ErrorCode::ConstraintViolation) => Ok(InsertOutcome::PlantAlreadyExists),
+            _ => Err(e),
+        },
+    }
 }
 
 // TODO: add the 10 minutes lock
@@ -135,6 +138,29 @@ mod tests {
 
         assert!(plants.contains(&plant1));
         assert!(plants.contains(&plant2));
+    }
+
+    #[test]
+    fn insert_plant_duplicated() {
+        let conn = rusqlite::Connection::open_in_memory().expect("failed to open connection");
+
+        create_table(&conn).unwrap();
+
+        let plant1 = Plant {
+            slug: String::from("WhiteLily"),
+            name: String::from("Lily"),
+            interval_days: 6,
+            last_watered_at: Some(100),
+        };
+        assert_eq!(
+            insert_plant(&conn, &plant1).unwrap(),
+            InsertOutcome::Created
+        );
+
+        assert_eq!(
+            insert_plant(&conn, &plant1).unwrap(),
+            InsertOutcome::PlantAlreadyExists
+        );
     }
 
     #[test]

@@ -14,7 +14,7 @@ use tracing_subscriber::EnvFilter;
 
 use crate::{
     db::{create_table, get_plant, get_plants, insert_plant},
-    model::Plant,
+    model::{InsertOutcome, Plant},
 };
 
 mod db;
@@ -46,10 +46,6 @@ async fn main() {
     };
 
     // --- Routes and middleware ---------------------------------------------
-    // `.layer()` wraps every route in tower middleware. TraceLayer creates a
-    // *span* per request (the context: method, uri) and an *event* when the
-    // response is sent (status, latency). Both log at DEBUG by default; we
-    // raise them to INFO so every request gets exactly one line in production.
     let app = Router::new()
         .route("/", get(root))
         .route("/w/{slug}", get(handle_get_plant))
@@ -63,14 +59,12 @@ async fn main() {
         .with_state(app_state);
 
     // --- Start the server --------------------------------------------------
-    // Panicking is fine at startup: if we can't bind, the program can't do anything useful. The closure builds
-    // the message only on failure and includes the OS reason (`e`).
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .unwrap_or_else(|e| panic!("failed to bind to {addr}: {e}"));
 
     // `%addr` records `addr` as a structured field using its Display impl
-    // (`?addr` would use Debug). It is not interpolated into the message.
+
     tracing::info!(%addr, "listening");
 
     // Runs until the process is stopped. It only resolves to Ok(()) once
@@ -85,47 +79,41 @@ async fn root() -> &'static str {
     "Hello, World!"
 }
 
-// TODO:
 async fn handle_get_plant(Path(slug): Path<String>, State(state): State<AppState>) -> StatusCode {
-    let res = state.db_connection.lock().unwrap(); // TODO: improve this
+    let conn = state.db_connection.lock().unwrap(); // TODO: improve this
 
-    match get_plant(&res, &slug) {
+    match get_plant(&conn, &slug) {
         Ok(None) => StatusCode::NOT_FOUND,
         Ok(_) => StatusCode::OK,
-        Err(_) => {
-            tracing::error!("some error");
+        Err(e) => {
+            tracing::error!(%e, "get plant failed");
             StatusCode::INTERNAL_SERVER_ERROR
         }
     }
 }
 
-async fn handle_get_plants(State(state): State<AppState>) -> StatusCode {
-    let res = state.db_connection.lock().unwrap(); // TODO: improve this
+async fn handle_get_plants(State(state): State<AppState>) -> Result<Json<Vec<Plant>>, StatusCode> {
+    let conn = state.db_connection.lock().unwrap(); // TODO: improve this
 
-    // TODO: we need to return json of the plants
-    match get_plants(&res) {
-        Ok(plants) => {
-            for ele in plants {
-                println!("{:?}", ele)
-            }
-            StatusCode::OK
-        }
-        Err(_) => {
-            tracing::error!("some error");
-            StatusCode::INTERNAL_SERVER_ERROR
+    match get_plants(&conn) {
+        Ok(plants) => Ok(Json(plants)),
+        Err(e) => {
+            tracing::error!(%e, "get plants failed");
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
 }
 
 async fn handle_post_plant(State(state): State<AppState>, Json(plant): Json<Plant>) -> StatusCode {
-    let res = state.db_connection.lock().unwrap(); // TODO: improve this
+    let conn = state.db_connection.lock().unwrap(); // TODO: improve this
 
-    match insert_plant(&res, &plant) {
-        Ok(_) => StatusCode::CREATED,
-        Err(_) => {
-            tracing::error!("some error");
+    match insert_plant(&conn, &plant) {
+        Err(e) => {
+            tracing::error!(%e, "post plant failed");
             StatusCode::INTERNAL_SERVER_ERROR
         }
+        Ok(InsertOutcome::Created) => StatusCode::CREATED,
+        Ok(InsertOutcome::PlantAlreadyExists) => StatusCode::CONFLICT,
     }
 }
 
