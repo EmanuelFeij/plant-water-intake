@@ -12,8 +12,10 @@ use axum::{
 use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
 use tracing_subscriber::EnvFilter;
 
+use model::MarkedWateredOutcome::*;
+
 use crate::{
-    db::{create_table, get_plant, get_plants, insert_plant},
+    db::{create_table, get_plant, get_plants, insert_plant, mark_watered},
     model::{InsertOutcome, Plant},
 };
 
@@ -46,11 +48,16 @@ async fn main() {
     };
 
     // --- Routes and middleware ---------------------------------------------
+
+    // TODO: add a layer to protect this endpoints;
+    let api_router = Router::new()
+        .route("/", get(handle_get_plants))
+        .route("/", post(handle_post_plant))
+        .route("/{slug}", get(handle_get_plant));
+
     let app = Router::new()
-        .route("/", get(root))
-        .route("/w/{slug}", get(handle_get_plant))
-        .route("/w", get(handle_get_plants))
-        .route("/w", post(handle_post_plant))
+        .nest("/api/plants", api_router)
+        .route("/w/{slug}", get(watering_plant))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(DefaultMakeSpan::new().level(tracing::Level::INFO))
@@ -74,20 +81,18 @@ async fn main() {
         .unwrap_or_else(|e| panic!("failed to serve at {addr}: {e}"));
 }
 
-// A handler is an async fn whose return type implements `IntoResponse`.
-async fn root() -> &'static str {
-    "Hello, World!"
-}
-
-async fn handle_get_plant(Path(slug): Path<String>, State(state): State<AppState>) -> StatusCode {
+async fn handle_get_plant(
+    Path(slug): Path<String>,
+    State(state): State<AppState>,
+) -> Result<Json<Plant>, StatusCode> {
     let conn = state.db_connection.lock().unwrap(); // TODO: improve this
 
     match get_plant(&conn, &slug) {
-        Ok(None) => StatusCode::NOT_FOUND,
-        Ok(_) => StatusCode::OK,
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Ok(Some(p)) => Ok(Json(p)),
         Err(e) => {
             tracing::error!(%e, "get plant failed");
-            StatusCode::INTERNAL_SERVER_ERROR
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
 }
@@ -114,6 +119,33 @@ async fn handle_post_plant(State(state): State<AppState>, Json(plant): Json<Plan
         }
         Ok(InsertOutcome::Created) => StatusCode::CREATED,
         Ok(InsertOutcome::PlantAlreadyExists) => StatusCode::CONFLICT,
+    }
+}
+
+async fn watering_plant(
+    State(state): State<AppState>,
+    Path(slug): Path<String>,
+) -> (StatusCode, String) {
+    let conn = state.db_connection.lock().unwrap();
+
+    let unix_now_in_seconds = jiff::Timestamp::now().as_second();
+
+    match mark_watered(&conn, &slug, unix_now_in_seconds) {
+        Err(e) => {
+            tracing::error!(%e, "watering plant failed");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                String::from("watering plant failed"),
+            )
+        }
+        Ok(NotFound) => {
+            tracing::info!(%slug, "plant not found");
+            (StatusCode::NOT_FOUND, String::from("plant not found"))
+        }
+        Ok(WateredRecently(plant_name)) => {
+            (StatusCode::OK, format!("{plant_name} was watered recently"))
+        }
+        Ok(Watered(plant_name)) => (StatusCode::OK, format!("{plant_name} watered ✓")),
     }
 }
 

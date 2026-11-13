@@ -54,17 +54,22 @@ One SQLite table is enough. History can come later.
 | interval\_days | integer | How often it needs water |
 | last\_watered\_at | timestamp, nullable | Null until the first tap |
 
-Plants are added by hand with SQL. Overdue means `last_watered_at + interval_days < now`, or never watered.
+Plants are added with `POST /api/plants` (or by SQL). Overdue means `last_watered_at + interval_days < now`, or never watered.
 
 ## Endpoints
 
-Three endpoints, all GET, because the phone opens tag URLs in the browser.
+The phone-facing pages are GET, because the phone opens tag URLs in the browser. `GET /w/{slug}` is the one GET with a side effect, on purpose: its URL is written to the NFC tags, so it is permanent. The JSON data endpoints live under `/api/plants`, in their own nested router.
 
 | Endpoint | Needs cookie | Does |
 | --- | --- | --- |
 | `GET /w/{slug}` | Yes | Sets `last_watered_at = now`, shows a small "Monstera watered ✓, last was 6 days ago" page |
 | `GET /` | Yes | Lists plants, most overdue first, with days since last watering |
 | `GET /pair?code=…` | No, needs the pairing code | Sets the auth cookie on this phone |
+| `GET /api/plants` | Yes | All plants as JSON |
+| `GET /api/plants/{slug}` | Yes | One plant as JSON, read-only (404 if unknown) |
+| `POST /api/plants` | Yes | Adds a plant from a JSON body: 201 created, 409 if the slug exists, 422 if the body is invalid |
+
+**Before deploying:** the `/api/plants` routes have no auth yet. Protect the whole nested router with one auth layer before the server is reachable from the internet. `POST` can change data, so it must not be public.
 
 Rules for `/w/{slug}`:
 
@@ -79,7 +84,7 @@ A long-lived cookie on my phone is the only thing that allows logging. Tag URLs 
 1. A `PAIRING_CODE` env var holds a long random string.
 2. I open `/pair?code=<PAIRING_CODE>` once on my phone, in the default browser.
 3. The server sets a signed cookie: HttpOnly, Secure, SameSite=Lax, about 1 year.
-4. Every request to `/` and `/w/{slug}` checks the signature.
+4. Every request to `/`, `/w/{slug}` and `/api/*` checks the signature.
 
 The cookie is signed with an HMAC key from a `COOKIE_SECRET` env var. Rotating that secret logs every device out.
 
@@ -125,7 +130,7 @@ Setup order:
 
 1. Deploy and check that `/` returns 401.
 2. Pair the phone.
-3. Insert the plants with SQL.
+3. Add the plants with `POST /api/plants` (or SQL).
 4. Write, test and lock the tags.
 5. Subscribe to the ntfy topic on the phone.
 
@@ -142,4 +147,13 @@ Setup order:
 - [ ] An overdue plant triggers exactly one push the next morning
 - [ ] Used for 2 weeks without touching the database by hand, apart from adding plants
 
-**Later, once the MVP has proven useful:** watering history, photos per plant and a timelapse, a dashboard with colour-coded cards, an add-plant form, and intervals learned from history.
+## Later
+
+Only once the MVP has proven useful. Roughly in this order:
+
+1. **Watering history.** A `waterings (plant_slug, watered_at)` table with one row per tap, linked to `plants` by a foreign key. Taps append rows instead of overwriting, which also brings back the "last was 6 days ago" message (it's the previous row). `last_watered_at` becomes derived, or a cached copy updated in the same transaction.
+2. **Plant info.** A description and care notes (light, water amount, quirks) on `plants`, shown on the tap page and the plant page.
+3. **Plant-sitter access.** Let someone water while I'm away. This changes the auth design: a second paired device that can be revoked after the trip, maybe a read-only page for the care notes. It answers the open pairing question in Auth.
+4. **Photos.** Per-plant images, later a timelapse.
+5. **Nicer UI.** A dashboard with colour-coded cards and an add-plant form.
+6. **Smarter intervals.** Learn each plant's interval from its history.

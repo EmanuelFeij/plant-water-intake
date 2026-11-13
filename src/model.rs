@@ -10,9 +10,9 @@ pub struct Plant {
 
 #[derive(Debug, PartialEq)]
 pub enum MarkedWateredOutcome {
-    Watered,
+    Watered(String),
+    WateredRecently(String), // at max 10 minutes prior
     NotFound,
-    WateredRecently, // at max 10 minutes prior
 }
 
 #[derive(Debug, PartialEq)]

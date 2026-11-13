@@ -30,23 +30,27 @@ plants:
 
 # POST a never-watered plant, e.g. `just add pothos "Pothos (kitchen)" 5`
 add slug name interval_days:
-    curl -s -w '\nHTTP %{http_code}\n' -X POST {{host}}/w \
+    curl -s -w '\nHTTP %{http_code}\n' -X POST {{host}}/api/plants \
         -H 'content-type: application/json' \
         -d '{"slug": "{{slug}}", "name": "{{name}}", "interval_days": {{interval_days}}, "last_watered_at": null}'
 
 # POST a plant from a JSON file, e.g. `just post requests/monstera.json`
 post file:
-    curl -s -w '\nHTTP %{http_code}\n' -X POST {{host}}/w \
+    curl -s -w '\nHTTP %{http_code}\n' -X POST {{host}}/api/plants \
         -H 'content-type: application/json' \
         -d @{{file}}
 
 # GET one plant by slug (200 if it exists, 404 if not)
 get slug:
-    curl -s -w '\nHTTP %{http_code}\n' {{host}}/w/{{slug}}
+    curl -s -w '\nHTTP %{http_code}\n' {{host}}/api/plants/{{slug}}
 
 # GET the plant list
 list:
-    curl -s -w '\nHTTP %{http_code}\n' {{host}}/w
+    curl -s -w '\nHTTP %{http_code}\n' {{host}}/api/plants
+
+# Simulate tapping a plant's NFC tag (waters it)
+water slug:
+    curl -s -w '\nHTTP %{http_code}\n' {{host}}/w/{{slug}}
 
 # Run clippy and the tests
 check:

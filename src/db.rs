@@ -28,7 +28,8 @@ FROM plants
 
 const MARK_WATERED_QUERY: &str = "
 UPDATE plants SET last_watered_at = ? 
-WHERE slug = ? AND ((last_watered_at IS NULL) OR (last_watered_at + 600 <= ?));
+WHERE slug = ? AND ((last_watered_at IS NULL) OR (last_watered_at + 600 <= ?))
+RETURNING name;
 ";
 
 pub fn create_table(connection: &rusqlite::Connection) -> Result<()> {
@@ -70,21 +71,24 @@ pub fn insert_plant(connection: &rusqlite::Connection, plant: &Plant) -> Result<
     }
 }
 
-// TODO: add the 10 minutes lock
 pub fn mark_watered(
     connection: &rusqlite::Connection,
     plant_slug: &str,
     unix_now_in_seconds: i64,
 ) -> Result<MarkedWateredOutcome> {
-    match connection.execute(
-        MARK_WATERED_QUERY,
-        params![unix_now_in_seconds, plant_slug, unix_now_in_seconds],
-    )? {
-        0 => match get_plant(connection, plant_slug)? {
-            Some(_) => Ok(MarkedWateredOutcome::WateredRecently),
+    match connection
+        .query_one(
+            MARK_WATERED_QUERY,
+            params![unix_now_in_seconds, plant_slug, unix_now_in_seconds],
+            |row| row.get(0),
+        )
+        .optional()?
+    {
+        None => match get_plant(connection, plant_slug)? {
+            Some(plant) => Ok(MarkedWateredOutcome::WateredRecently(plant.name)),
             None => Ok(MarkedWateredOutcome::NotFound),
         },
-        _ => Ok(MarkedWateredOutcome::Watered),
+        Some(plant_name) => Ok(MarkedWateredOutcome::Watered(plant_name)),
     }
 }
 
@@ -206,7 +210,7 @@ mod tests {
         insert_plant(&conn, &plant1).unwrap();
 
         let res = mark_watered(&conn, &plant1.slug, 1000).unwrap();
-        assert_eq!(res, MarkedWateredOutcome::Watered);
+        assert_eq!(res, MarkedWateredOutcome::Watered(String::from("Lily")));
 
         let returned_plant = get_plant(&conn, &plant1.slug).unwrap().unwrap();
 
@@ -269,7 +273,10 @@ mod tests {
 
         let res = mark_watered(&conn, &plant1.slug, 1000 + 300).unwrap();
 
-        assert_eq!(res, MarkedWateredOutcome::WateredRecently);
+        assert_eq!(
+            res,
+            MarkedWateredOutcome::WateredRecently(String::from("Lily"))
+        );
 
         let returned_plant = get_plant(&conn, &plant1.slug).unwrap().unwrap();
 
