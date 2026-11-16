@@ -1,0 +1,96 @@
+/* Styles for the plant pages. Loaded into the binary at compile time
+   with include_str!, so there is no file to serve at runtime. */
+
+:root {
+  --bg: #f6f7f4;
+  --card: #ffffff;
+  --text: #1f2a1f;
+  --muted: #6b766b;
+  --border: #e2e6df;
+  --ok: #2f7d4a;
+  --overdue: #b4471f;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141814;
+    --card: #1d231d;
+    --text: #e6ebe4;
+    --muted: #97a397;
+    --border: #2c352c;
+    --ok: #6cc28a;
+    --overdue: #f0875f;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0 auto;
+  max-width: 32rem;
+  /* comfortable width on desktop, full width on a phone */
+  padding: 1.5rem 1rem;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  line-height: 1.4;
+}
+
+h1 {
+  margin: 0 0 1rem;
+  font-size: 1.5rem;
+}
+
+/* One card per plant: <div class="plant"> */
+.plant {
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.6rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+}
+
+/* First line: name on the left, badge on the right */
+.plant-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.plant-name {
+  font-weight: 600;
+  font-size: 1.05rem;
+}
+
+/* Second line: "watered 9 days ago · every 7 days" */
+.details {
+  margin-top: 0.2rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+/* Status badge: <span class="badge overdue"> or <span class="badge ok"> */
+.badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+
+.badge.ok {
+  color: var(--ok);
+}
+
+.badge.overdue {
+  color: var(--overdue);
+}
+
+/* Overdue cards get a coloured left edge so they stand out when scanning */
+.plant.overdue {
+  border-left: 4px solid var(--overdue);
+}

@@ -153,6 +153,8 @@ pub async fn handle_get_tap(
     }
 }
 
+const CSS: &str = include_str!("../assets/dashboard.css");
+
 pub async fn handle_get_dashboard(State(state): State<AppState>) -> (StatusCode, Markup) {
     let conn = state.db_connection.lock().unwrap();
 
@@ -161,21 +163,41 @@ pub async fn handle_get_dashboard(State(state): State<AppState>) -> (StatusCode,
     match get_plants(&conn) {
         Ok(plants) => {
             let html: Markup = html! {
-                h1 {"Plants"}
-                ul {
-                    @for plant in &plants {
-
-                        li {
-                            (&plant.name)
-                            @match plant.last_watered_at {
-                                Some(t) => {   (time_since(t, unix_now_in_seconds))  },
-                                None => { "never watered" }
+                                (maud::DOCTYPE)
+                                html {
+                head {
+                    meta charset="utf-8";
+                    meta name="viewport" content="width=device-width, initial-scale=1";
+                    title { "Plants" }
+                    style { (maud::PreEscaped(CSS)) }
+                }
+                body {
+                        h1 {"Plants"}
+                        ul {
+                            @for plant in &plants {
+                                div.plant {
+                                    div.plant-head {
+                                        span.plant-name{ (&plant.name)}
+                                        span.badge.overdue {
+                                             @match plant.last_watered_at {
+                                                Some(t) => {   "watered "(time_since(t, unix_now_in_seconds)) " ago"  },
+                                                None => { "never watered" }
+                                            }
+                                        }
+                                    }
+                                    div.details  {
+                                        @match plant.interval_days {
+                                            ..=0 => {}
+                                            1 => {   "should be watered daily"  },
+                                            1.. => { "should be watered on regular intervals of " (&plant.interval_days) " days"}
+                                        }
+                                    }
+                                }
                             }
                         }
-                    }
+                    };
                 }
             };
-
             (StatusCode::OK, html)
         }
         Err(e) => {

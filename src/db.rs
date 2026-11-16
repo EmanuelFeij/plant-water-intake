@@ -6,7 +6,8 @@ CREATE TABLE IF NOT EXISTS plants (
     slug TEXT PRIMARY KEY NOT NULL, 
     name TEXT NOT NULL, 
     interval_days INTEGER NOT NULL, 
-    last_watered_at INTEGER DEFAULT NULL
+    last_watered_at INTEGER DEFAULT NULL,
+    due_at INTEGER GENERATED ALWAYS AS (last_watered_at + interval_days * 86400) VIRTUAL
 );
 ";
 
@@ -24,6 +25,7 @@ VALUES ( ?, ?, ?, ?);
 const GET_PLANTS_QUERY: &str = "
 SELECT slug, name, interval_days, last_watered_at 
 FROM plants
+ORDER BY due_at ASC NULLS FIRST, name ASC
 ";
 
 const MARK_WATERED_QUERY: &str = "
@@ -279,5 +281,57 @@ mod tests {
         let returned_plant = get_plant(&conn, &plant1.slug).unwrap().unwrap();
 
         assert_eq!(returned_plant.last_watered_at, Some(1000));
+    }
+
+    #[test]
+    fn get_plants_success_by_due_at() {
+        let conn = rusqlite::Connection::open_in_memory().expect("failed to open connection");
+
+        create_table(&conn).unwrap();
+
+        let plant1 = Plant {
+            slug: String::from("lily"),
+            name: String::from("White Lily"),
+            interval_days: 6,
+            last_watered_at: Some(100),
+        };
+        insert_plant(&conn, &plant1).unwrap();
+
+        let plant2 = Plant {
+            slug: String::from("rose"),
+            name: String::from("White Rose"),
+            interval_days: 6,
+            last_watered_at: None,
+        };
+        insert_plant(&conn, &plant2).unwrap();
+
+        let plant3 = Plant {
+            slug: String::from("daisy"),
+            name: String::from("Blue Daisy"),
+            interval_days: 6,
+            last_watered_at: Some(1),
+        };
+        insert_plant(&conn, &plant3).unwrap();
+
+        let plant4 = Plant {
+            slug: String::from("euca"),
+            name: String::from("Eucalipt"),
+            interval_days: 3,
+            last_watered_at: Some(2),
+        };
+        insert_plant(&conn, &plant4).unwrap();
+
+        let plant5 = Plant {
+            slug: String::from("oak"),
+            name: String::from("Big Oak"),
+            interval_days: 3,
+            last_watered_at: Some(2),
+        };
+        insert_plant(&conn, &plant5).unwrap();
+
+        let response = get_plants(&conn).unwrap();
+
+        let slugs: Vec<&str> = response.iter().map(|p| p.slug.as_str()).collect();
+        assert_eq!(slugs, ["rose", "oak", "euca", "daisy", "lily"]);
     }
 }
