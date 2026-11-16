@@ -103,8 +103,6 @@ fn row_to_plant(row: &Row) -> Result<Plant> {
 
 #[cfg(test)]
 mod tests {
-    use crate::model::MarkedWateredOutcome;
-
     use super::*;
 
     #[test]
