@@ -94,3 +94,8 @@ h1 {
 .plant.overdue {
   border-left: 4px solid var(--overdue);
 }
+
+.watered-status {
+  font-weight: 800;
+  font-size: 0.95rem;
+}

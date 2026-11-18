@@ -9,6 +9,13 @@ pub struct Plant {
     pub last_watered_at: Option<i64>, // unix seconds
 }
 
+impl Plant {
+    pub fn is_overdue(&self, now: i64) -> bool {
+        self.last_watered_at
+            .is_none_or(|lwa| now > ((self.interval_days * 86400) + lwa))
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub enum MarkedWateredOutcome {
     Watered(String),
@@ -104,5 +111,27 @@ mod tests {
         assert_eq!(elapsed.hours, 0);
 
         assert_eq!(elapsed.to_string(), "Less Than 1 Hour");
+    }
+
+    #[test]
+    fn is_overdue_several_cases() {
+        let plant = Plant {
+            slug: String::from("WhiteLily"),
+            name: String::from("Lily"),
+            interval_days: 6,
+            last_watered_at: Some(100),
+        };
+
+        let plant2 = Plant {
+            slug: String::from("rose"),
+            name: String::from("Rose"),
+            interval_days: 6,
+            last_watered_at: None,
+        };
+
+        assert!(!plant.is_overdue(518500));
+        assert!(!plant.is_overdue(500000));
+        assert!(plant.is_overdue(518700));
+        assert!(plant2.is_overdue(0));
     }
 }

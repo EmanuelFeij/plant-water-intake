@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    num::NonZeroU32,
+    sync::{Arc, Mutex},
+};
 
 use axum::{
     Json, Router,
@@ -92,7 +95,7 @@ pub async fn handle_get_plants(
 pub struct PostPlantRequest {
     pub slug: String,
     pub name: String,
-    pub interval_days: i64,
+    pub interval_days: NonZeroU32,
 }
 
 impl From<PostPlantRequest> for Plant {
@@ -100,7 +103,7 @@ impl From<PostPlantRequest> for Plant {
         Plant {
             slug: value.slug,
             name: value.name,
-            interval_days: value.interval_days,
+            interval_days: i64::from(value.interval_days.get()),
             last_watered_at: None,
         }
     }
@@ -172,30 +175,38 @@ pub async fn handle_get_dashboard(State(state): State<AppState>) -> (StatusCode,
                     style { (maud::PreEscaped(CSS)) }
                 }
                 body {
-                        h1 {"Plants"}
-                        ul {
-                            @for plant in &plants {
-                                div.plant {
-                                    div.plant-head {
-                                        span.plant-name{ (&plant.name)}
-                                        span.badge.overdue {
-                                             @match plant.last_watered_at {
-                                                Some(t) => {   "watered "(time_since(t, unix_now_in_seconds)) " ago"  },
-                                                None => { "never watered" }
-                                            }
+                    h1 {"Plants"}
+                        @for plant in &plants {
+                            @let overdue = plant.is_overdue(unix_now_in_seconds);
+                            div.plant.overdue[overdue] {
+                                div.plant-head {
+                                    span.plant-name { (plant.name) }
+                                    @if overdue {
+                                        span.badge.overdue { "overdue" }
+                                    } @else {
+                                        span.badge.ok { "ok" }
+                                    }
+                                }
+                                div.details  {
+                                    div {
+                                        span.watered-status{"Watered Status: "}
+                                        @match plant.last_watered_at {
+                                            Some(t) => {   "watered "(time_since(t, unix_now_in_seconds)) " ago"  },
+                                            None => { "never watered" }
                                         }
                                     }
-                                    div.details  {
+                                    div {
+                                        span.watered-status{"Watering Interval: "}
                                         @match plant.interval_days {
                                             ..=0 => {}
-                                            1 => {   "should be watered daily"  },
-                                            1.. => { "should be watered on regular intervals of " (&plant.interval_days) " days"}
+                                            1 => {   "daily"  },
+                                            1.. => { "regular intervals of " (&plant.interval_days) " days"}
                                         }
                                     }
                                 }
                             }
                         }
-                    };
+                    }
                 }
             };
             (StatusCode::OK, html)
